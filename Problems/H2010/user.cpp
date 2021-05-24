@@ -1,391 +1,203 @@
-//#define HASH unsigned long 
-#define NULL 0
+#define MAX_SCHEDULE    50000
+#define MAX_USER        1000
+#define MAX_GROUP       100
+#define MAX_USCHEDULE   100
+#define HASH            403
+#define NULLPTR         0
 
-//#define DEBUG 
-#ifdef DEBUG
-//#include <stdio.h>
-#else
-#define printf //printf
-#endif
-
-struct HASH
-{
-    long long lo;
-    long long hi;
-};
-
-HASH hash(const char* str)
-{
-    register HASH tmp;
-    tmp.lo = 0;
-    tmp.hi = 0;
-    register int c;
-    register int cnt = 0;
-
-    while (1)
-    {
-        c = *str++;
-        if (c == 0) return tmp;
-        tmp.lo = ((tmp.lo << 8) + c);
-        cnt++;
-        if (cnt == 8) break;
-    }
-    while (1)
-    {
-        c = *str++;
-        if (c < 'a') break;
-        tmp.hi = ((tmp.hi << 8) + c);
-    }
-    return tmp;
+void mstrcpy(char dst[], const char src[]) {
+    int c = 0;
+    while ((dst[c] = src[c]) != 0) ++c;
 }
 
-const unsigned int MAX_SCHED = 50000;
-const unsigned int MAX_USER = 1000;
-const unsigned int MAX_GROUP = 100;
-const unsigned int MAX_GROUP_MASTER_NUM = 200;
-const int kTestGroupId = 46;
-const int kTestMasterId = 43;
-int schedNo;
+int mstrcmp(const char str1[], const char str2[]) {
+    int c = 0;
+    while (str1[c] != 0 && str1[c] == str2[c]) ++c;
+    return str1[c] - str2[c];
+}
 
-struct SCHED
-{
-    int schedIdx;
+struct SCHEDULE {
+    long long name;
+    int firstname;
+    int gid;
     int uid;
-    int gid;
-    HASH nameH;
-    char name[15];
-    int child;
-    bool bValid;
-    SCHED()
-    {
-        nameH = { -1,-1 };
-        for (int i = 0; i < 15; ++i)
-            name[i] = '\0';
-        schedIdx = uid = gid = child = -1;
-        bValid = true;
-    }
-}sched[MAX_SCHED];
+    bool isMaster;
+    bool isDeleted;
+    SCHEDULE* next;
+};
+SCHEDULE schedules[MAX_SCHEDULE + 2];
+int sidx;
 
-int searchLastChild(int idx) // 현재 idx의 가장 마지막 child indx를 찾는다.
-{
-    while (idx != -1)
-    {
-        if (sched[idx].child == -1)
-        {
-            break;
-        }
-        idx = sched[idx].child;
-    }
+struct GROUP {
+    SCHEDULE hashtb[HASH];
+};
+GROUP groups[MAX_GROUP];
 
-    return idx;
-}
-
-int createSched(int uid_, int gid_, char name_[])
-{
-    sched[schedNo].schedIdx = schedNo;
-    sched[schedNo].uid = uid_;
-    sched[schedNo].gid = gid_;
-    sched[schedNo].nameH = hash(name_);
-    sched[schedNo].bValid = true;
-
-    return schedNo;
-}
-
-struct USER
-{
-    int schedCnt;
-    int schedIdx;
-    SCHED* schedList[100];
-    USER()
-    {
-        schedCnt = schedIdx = 0;
-        for (register int i = 0; i < 100; ++i)
-        {
-            schedList[i] = NULL;
-        }
-    }
-}user[MAX_USER];
-
-struct GROUP
-{
-    int gid;
-    int master[MAX_GROUP_MASTER_NUM];
-    int masterIdx;
-    GROUP()
-    {
-        gid = -1;
-        masterIdx = 0;
-        for (register int i = 0; i < MAX_GROUP_MASTER_NUM; i++)
-            master[i] = -1;
-    }
-    // 현재 group의 master 배열에서 -1인 곳을 찾아 업데이트 합니다.
-    // 이것은 master 중에 현재 index와 동일한 것이 없다를 의미합니다.
-    void insert(int schedIdx)
-    {
-        for (register int i = 0; i < MAX_GROUP_MASTER_NUM; ++i)
-        {
-            if (master[i] == -1)
-            {
-                master[i] = schedIdx;
-                masterIdx++;
-                return;
-            }
-        }
-#ifdef DEBUG
-        printf("[err] fail to insert value: %d into gid: %d\n", schedIdx, gid);
-#endif        
-    }
-}group[MAX_GROUP];
-
-#ifdef DEBUG
-void verifyChild(int idx)
-{
-    if (idx == kTestMasterId || kTestMasterId == -1)
-    {
-        int curIdx = idx;
-        int childIdx = sched[curIdx].child;
-        printf("Master: %d -> ", curIdx);
-        while (sched[curIdx].child != -1)
-        {
-            childIdx = sched[curIdx].child;
-            printf("Normal: (%s)%d -> ", sched[childIdx].name, childIdx);
-            //if (!(sched[curIdx].nameH == sched[childIdx].nameH))
-                //printf("Wrong nameH parent: %d, child: %d\n", sched[curIdx].nameH, sched[childIdx].nameH);
-
-            curIdx = sched[curIdx].child;
-        }
-        printf("NULL\n");
-    }
-}
-
-void verifyGroup(int gid)
-{
-    if (gid == kTestGroupId || kTestGroupId == -1)
-    {
-        printf("Group %d: ", gid);
-        for (int i = 0; i < MAX_GROUP_MASTER_NUM; ++i)
-        {
-            int idx = group[gid].master[i];
-            printf("%d-%s(%d) -> ", idx, sched[idx].name, sched[idx].nameH);
-            verifyChild(idx);
-        }
-        printf("NULL\n");
-    }
-}
-#endif
+struct USER {
+    int cnt;
+    int schdule[MAX_USCHEDULE];
+};
+USER users[MAX_USER];
 
 void init()
 {
-    register USER new_user;
-    for (register int i = 0; i < MAX_USER; ++i)
-        user[i] = new_user;
-
-    register GROUP new_group;
-    for (register int i = 0; i < MAX_GROUP; ++i)
-        group[i] = new_group;
-
-    schedNo = 0;
-    register SCHED new_sched;
-    for (register int i = 0; i < MAX_SCHED; ++i)
-        sched[i] = new_sched;
-
-    schedNo = 0;
-}
-
-void addEvent(int uid, char ename[], int gid)
-{
-    // sched 생성
-    int new_schedIdx = createSched(uid, gid, ename);
-    schedNo++;
-
-    // user에 등록한다.
-    user[uid].schedList[user[uid].schedIdx] = &sched[new_schedIdx];
-    user[uid].schedIdx++;
-    user[uid].schedCnt++;
-
-    // group에 등록한다.
-    HASH enameH = hash(ename);
-    for (register int i = 0; i < MAX_GROUP_MASTER_NUM; ++i)
-    {
-        if (group[gid].master[i] != -1) // Master가 있는 경우, hash 확인
-        {
-            int curIdx = group[gid].master[i];
-            if ((sched[curIdx].nameH.lo == enameH.lo) &&  // hash 같으면 child 맨 끝에 달기
-                (sched[curIdx].nameH.hi == enameH.hi))
-            {
-                curIdx = searchLastChild(curIdx);
-                sched[curIdx].child = new_schedIdx;
-                return;
-            }
+    sidx = 0;
+    for (register int i = 0; i < MAX_USER; i++) {
+        users[i].cnt = 0;
+    }
+    for (register int i = 0; i < MAX_GROUP; i++) {
+        for (register int j = 0; j < HASH; j++) {
+            groups[i].hashtb[j].name = 0;
+            groups[i].hashtb[j].firstname = 0;
+            groups[i].hashtb[j].next = NULLPTR;
         }
     }
+}
 
-    // 등록하려는 sched가 master로 들어가야 하는 경우
-    group[gid].insert(new_schedIdx);
+int firstName;
+long long getName(char str[]) {
+    register long long res = 0;
+    firstName = ((str[0] - 'a' + 1) << 5) + str[1] - 'a' + 1;
+    for (register int i = 2; str[i]; i++) {
+        res = (res << 5) + str[i] - 'a' + 1;
+    }
+    return res;
+}
 
-#ifdef DEBUG
-    verifyGroup(gid);
-#endif
+void addEvent(int uid, char ename[], int groupid)
+{
+    users[uid].schdule[users[uid].cnt++] = sidx;
+
+    register SCHEDULE* sch = &schedules[sidx++];
+    sch->name = getName(ename);
+    sch->firstname = firstName;
+    sch->gid = groupid;
+    sch->uid = uid;
+    sch->isDeleted = false;
+    for (register int idx = sch->name % HASH; ; idx = (idx + 1) % HASH) {
+
+        if ((groups[groupid].hashtb[idx].next == NULLPTR && groups[groupid].hashtb[idx].name == 0) || // 동일한 이름의 일정이 없음
+            (groups[groupid].hashtb[idx].name == sch->name && groups[groupid].hashtb[idx].firstname == sch->firstname)) { // 동일한 이름의 일정이 있음
+
+            if (groups[groupid].hashtb[idx].next == NULLPTR) sch->isMaster = true; // 동일한 이름의 일정 없는 경우 마스터
+            else sch->isMaster = false;
+            sch->next = groups[groupid].hashtb[idx].next;
+            groups[groupid].hashtb[idx].next = sch;
+            groups[groupid].hashtb[idx].name = sch->name;
+            groups[groupid].hashtb[idx].firstname = sch->firstname;
+            break;
+        }
+    }
 }
 
 int deleteEvent(int uid, char ename[])
 {
-    register HASH delNameH = hash(ename);
-    int gid = -1;
-    int curIdx = -1;
-    int count = 0;
-    int userSchedIdx = -1;
+    register SCHEDULE* sch;
+    register long long name = getName(ename);
+    register int idx, cnt;
 
-    for (register int i = 0; i < user[uid].schedIdx; ++i)
-    {
-        if (user[uid].schedList[i]->bValid == true)
-        {
-            curIdx = user[uid].schedList[i]->schedIdx;
-            if ((sched[curIdx].nameH.lo == delNameH.lo) && (sched[curIdx].nameH.hi == delNameH.hi))
-            {
-                userSchedIdx = i;
-                gid = user[uid].schedList[i]->gid;
-                break;
+    for (register int i = 0; i < users[uid].cnt; i++) {
+        idx = users[uid].schdule[i];
+
+        if (schedules[idx].name != name || schedules[idx].firstname != firstName) continue;
+
+        sch = &schedules[idx];
+        if (!schedules[idx].isMaster) { // 마스터 일정이 아닌 경우
+            users[uid].schdule[i] = users[uid].schdule[users[uid].cnt - 1];
+            users[uid].cnt--;
+            schedules[idx].isDeleted = true;
+            return 1;
+        }
+        // 마스터 일정인 경우
+        register int gid = schedules[idx].gid;
+        for (register int idx = sch->name % HASH;; idx = (idx + 1) % HASH) {
+            if ((groups[gid].hashtb[idx].name == sch->name && groups[gid].hashtb[idx].firstname == sch->firstname)) {
+                cnt = 0;
+                for (sch = groups[gid].hashtb[idx].next; sch; sch = sch->next) {
+                    if (sch->isDeleted) continue;
+                    for (register int j = 0; j < users[sch->uid].cnt; j++) {
+                        if (schedules[users[sch->uid].schdule[j]].name != sch->name || schedules[users[sch->uid].schdule[j]].firstname != sch->firstname) continue;
+                        users[sch->uid].schdule[j] = users[sch->uid].schdule[users[sch->uid].cnt - 1];
+                        users[sch->uid].cnt--;
+                        break;
+                    }
+                    sch->isDeleted = true;
+                    cnt++;
+                }
+                groups[gid].hashtb[idx].next = NULLPTR;
+                return cnt;
             }
         }
     }
-
-    for (register int i = 0; i < MAX_GROUP_MASTER_NUM; ++i)
-    {
-        if (group[gid].master[i] == -1)
-            continue;
-
-        int curIdx = group[gid].master[i];
-        if ((sched[curIdx].nameH.lo == delNameH.lo) && (sched[curIdx].nameH.hi == delNameH.hi))
-        {
-            int masterIdx = curIdx;
-            if (sched[curIdx].uid == uid) // Master와 uid까지 같으면 Master이하 바꿈.
-            {
-                // 1. Master 무효화
-                group[gid].master[i] = -1;
-
-                // 2. 전체 child 삭제
-                while (curIdx != -1)
-                {
-                    sched[curIdx].bValid = false;
-                    user[sched[curIdx].uid].schedCnt--;
-
-                    curIdx = sched[curIdx].child;
-                    count++;
-                }
-
-                return count;
-            }
-            else // Normal -> 이하를 찾아서 삭제
-            {
-                while (curIdx != -1)
-                {
-                    int curChildIdx = sched[curIdx].child;
-                    if (curChildIdx == -1)
-                    {
-#ifdef DEBUG
-                        printf("[WARN] curChildIdx : -1\n");
-#endif
-                    }
-
-                    if (sched[curChildIdx].uid == uid)
-                    {
-                        // child 연결
-                        sched[curIdx].child = sched[curChildIdx].child;
-
-                        // change sched update
-                        sched[curChildIdx].bValid = false;
-                        user[uid].schedCnt--;
-
-#ifdef DEBUG
-                        verifyGroup(gid);
-#endif
-                        return 1;
-                    }
-
-                    curIdx = sched[curIdx].child;
-                }
-            }
-        }
-    }
-
-    return count;
+    return 0;
 }
 
 int changeEvent(int uid, char ename[], char cname[])
 {
-    register HASH chgNameH = hash(ename);
-    register HASH newNameH = hash(cname);
-    int gid = -1;
-    int curIdx = -1;
-    int count = 0;
-    int userSchedIdx = -1;
+    register SCHEDULE* sch1;
+    register SCHEDULE* sch2;
+    register int firstname1;
+    register int idx;
+    register int cnt = 0;
+    register long long name = getName(ename);
+    firstname1 = firstName;
 
-    for (register int i = 0; i < user[uid].schedIdx; ++i)
-    {
-        if (user[uid].schedList[i]->bValid == true)
-        {
-            curIdx = user[uid].schedList[i]->schedIdx;
-            if ((sched[curIdx].nameH.lo == chgNameH.lo) && (sched[curIdx].nameH.hi == chgNameH.hi))
-            {
-                userSchedIdx = i;
-                gid = user[uid].schedList[i]->gid;
+    sch2 = &schedules[sidx++];
+    sch2->name = getName(cname);
+    sch2->firstname = firstName;
+    sch2->uid = uid;
+    sch2->isDeleted = false;
+    sch2->isMaster = true;
+
+    for (register int i = 0; i < users[uid].cnt; i++) {
+        idx = users[uid].schdule[i];
+        if (schedules[idx].name != name || schedules[idx].firstname != firstname1) continue;
+        sch1 = &schedules[idx];
+
+        users[uid].schdule[i] = sidx - 1;
+        sch2->gid = schedules[idx].gid;
+
+        register int changeHashIndex;
+        for (register int index = sch2->name % HASH; ; index = (index + 1) % HASH) {
+            if (groups[sch2->gid].hashtb[index].next == NULLPTR && groups[sch2->gid].hashtb[index].name == 0) {
+                changeHashIndex = index;
+                groups[sch2->gid].hashtb[index].name = sch2->name;
+                groups[sch2->gid].hashtb[index].firstname = sch2->firstname;
                 break;
             }
         }
-    }
 
-    for (register int i = 0; i < MAX_GROUP_MASTER_NUM; ++i)
-    {
-        if (group[gid].master[i] == -1)
-            continue;
+        if (!schedules[idx].isMaster) { // 마스터가 아닌 경우
+            schedules[idx].isDeleted = true;
+            sch2->next = groups[sch2->gid].hashtb[changeHashIndex].next;
+            groups[sch2->gid].hashtb[changeHashIndex].next = sch2;
+            return 1;
+        }
 
-        int curIdx = group[gid].master[i];
+        register int groupid = schedules[idx].gid;
+        for (register int index = sch1->name % HASH; ; index = (index + 1) % HASH) {
+            if ((groups[groupid].hashtb[index].name == sch1->name && groups[groupid].hashtb[index].firstname == sch1->firstname)) {
+                cnt = 0;
+                register SCHEDULE* sch = groups[groupid].hashtb[index].next;
+                for (; sch; sch = sch->next) {
+                    if (sch->isDeleted)continue;
+                    sch->name = sch2->name;
+                    sch->firstname = sch2->firstname;
 
-        if ((sched[curIdx].nameH.lo == chgNameH.lo) && (sched[curIdx].nameH.hi == chgNameH.hi))
-        {
-            int masterIdx = curIdx;
-            if (sched[curIdx].uid == uid) // Master 라면..전체 child 업데이트
-            {
-                while (curIdx != -1)
-                {
-                    sched[curIdx].nameH = newNameH;
-                    curIdx = sched[curIdx].child;
-                    count++;
+                    cnt++;
                 }
-
-                return count;
-            }
-            else // Normal이라면 이하를 찾아서 update
-            {
-                while (curIdx != -1)
-                {
-                    int curChildIdx = sched[curIdx].child;
-
-                    if (sched[curChildIdx].uid == uid) // 찾았을때, Normal -> Master로 뺀다
-                    {
-                        // child 연결
-                        sched[curIdx].child = sched[curChildIdx].child;
-
-                        // change sched update
-                        sched[curChildIdx].nameH = newNameH;
-
-                        // Master 의 맨 끝에 연결
-                        group[gid].insert(curChildIdx);
-                        sched[curChildIdx].child = -1;
-
-                        return 1;
-                    }
-                    curIdx = sched[curIdx].child;
-                }
+                sch = groups[groupid].hashtb[index].next;
+                groups[groupid].hashtb[changeHashIndex].next = sch;
+                groups[groupid].hashtb[index].next = NULLPTR;
+                break;
             }
         }
-    }
 
-    return count;
+    }
+    return cnt;
 }
 
 int getCount(int uid)
 {
-    return user[uid].schedCnt;
+    return users[uid].cnt;
 }
